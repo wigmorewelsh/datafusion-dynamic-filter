@@ -91,7 +91,9 @@ impl DynamicFilterExec {
         df.update(physical_predicate)
     }
 
-    fn create_placeholder_physical_expr(&self) -> Arc<dyn PhysicalExpr> {
+    fn create_placeholder_physical_expr(
+        &self,
+    ) -> (Arc<dyn PhysicalExpr>, Vec<Arc<dyn PhysicalExpr>>) {
         use datafusion::common::tree_node::{Transformed, TreeNode};
 
         let predicate_with_nulls = self
@@ -118,7 +120,7 @@ impl DynamicFilterExec {
             })
             .data;
 
-        create_physical_expr(
+        let physical_expr = create_physical_expr(
             &predicate_with_nulls,
             &self.input_dfschema,
             &Default::default(),
@@ -127,7 +129,14 @@ impl DynamicFilterExec {
             Arc::new(datafusion_physical_expr::expressions::Literal::new(
                 datafusion::common::ScalarValue::Boolean(Some(true)),
             ))
-        })
+        });
+
+        let children: Vec<Arc<dyn PhysicalExpr>> =
+            datafusion_physical_expr::utils::collect_columns(&physical_expr)
+                .into_iter()
+                .map(|col| Arc::new(col) as Arc<dyn PhysicalExpr>)
+                .collect();
+        (physical_expr, children)
     }
 
     fn extract_dynamic_filter_from_pushdown(
@@ -234,17 +243,22 @@ impl ExecutionPlan for DynamicFilterExec {
         context: Arc<datafusion::execution::TaskContext>,
     ) -> DataFusionResult<SendableRecordBatchStream> {
         let predicate_with_params = self.resolve_params(&context);
+
+        if self.dynamic_filter.is_some() {
+            let physical_predicate = create_physical_expr(
+                &predicate_with_params,
+                &self.input_dfschema,
+                &Default::default(),
+            )?;
+            self.update_dynamic_filter(physical_predicate)?;
+            return self.input.execute(partition, context);
+        }
+
         let physical_predicate = create_physical_expr(
             &predicate_with_params,
             &self.input_dfschema,
             &Default::default(),
         )?;
-
-        if self.dynamic_filter.is_some() {
-            self.update_dynamic_filter(physical_predicate)?;
-            return self.input.execute(partition, context);
-        }
-
         let filter_exec = FilterExec::try_new(physical_predicate, self.input.clone())?;
         filter_exec.execute(partition, context)
     }
@@ -269,10 +283,9 @@ impl ExecutionPlan for DynamicFilterExec {
         }
 
         let dynamic_filter = self.dynamic_filter.clone().unwrap_or_else(|| {
-            let physical_placeholder = self.create_placeholder_physical_expr();
-            let children = physical_placeholder.children();
+            let (physical_placeholder, children) = self.create_placeholder_physical_expr();
             Arc::new(DynamicFilterPhysicalExpr::new(
-                children.into_iter().map(Arc::clone).collect(),
+                children,
                 physical_placeholder,
             )) as Arc<dyn PhysicalExpr>
         });

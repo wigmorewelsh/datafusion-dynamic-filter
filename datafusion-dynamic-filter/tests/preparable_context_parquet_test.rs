@@ -187,3 +187,46 @@ async fn test_parameterized_query_multiple_executions_parquet() {
     assert_eq!(id_col2.value(0), 5);
     assert_eq!(value_col2.value(0), "epsilon");
 }
+
+#[tokio::test]
+async fn test_parameterized_query_multiple_parameters_with_projection() {
+    let temp_dir = TempDir::new().unwrap();
+    let parquet_path = create_parquet_file(&temp_dir);
+
+    let ctx = create_session_context();
+    register_parquet_table(&ctx, "records", &parquet_path).await;
+
+    let stmt = ctx
+        .prepare("SELECT id, value FROM records WHERE id >= $1 AND score <= $2")
+        .await
+        .unwrap();
+
+    let mut params = HashMap::new();
+    params.insert("$1".to_string(), ScalarValue::Int32(Some(2)));
+    params.insert("$2".to_string(), ScalarValue::Int32(Some(30)));
+
+    let result = stmt.execute(params).await.unwrap();
+    let batches = datafusion::physical_plan::common::collect(result)
+        .await
+        .unwrap();
+
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(total_rows, 2);
+
+    let batch = &batches[0];
+    let id_col = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int32Array>()
+        .unwrap();
+    let value_col = batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<StringViewArray>()
+        .unwrap();
+
+    assert_eq!(id_col.value(0), 2);
+    assert_eq!(value_col.value(0), "beta");
+    assert_eq!(id_col.value(1), 3);
+    assert_eq!(value_col.value(1), "gamma");
+}
