@@ -51,7 +51,7 @@ mod tests {
     use crate::DynamicFilterNode;
     use datafusion::execution::context::SessionContext;
     use datafusion::logical_expr::expr::Placeholder;
-    use datafusion::logical_expr::{Expr, LogicalPlanBuilder, col, lit};
+    use datafusion::logical_expr::{col, lit, Expr, LogicalPlanBuilder};
     use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 
     #[tokio::test]

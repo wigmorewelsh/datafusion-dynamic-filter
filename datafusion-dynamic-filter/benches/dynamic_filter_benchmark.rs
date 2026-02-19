@@ -1,4 +1,4 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use datafusion::arrow::array::{Int32Array, RecordBatch, StringArray};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::common::ScalarValue;
@@ -9,8 +9,8 @@ use datafusion_dynamic_filter::{
     DynamicFilterExtensionPlanner, DynamicFilterRule, ExtendableQueryPlanner,
     PreparableSessionContext,
 };
-use rand::SeedableRng;
 use rand::seq::SliceRandom;
+use rand::SeedableRng;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use tokio::runtime::Runtime;

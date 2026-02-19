@@ -1,5 +1,5 @@
 use super::param_resolver::ParamResolverUDF;
-use super::param_resolver::{PARAM_RESOLVER_UDF_NAME, replace_placeholders};
+use super::param_resolver::{replace_placeholders, PARAM_RESOLVER_UDF_NAME};
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::{DFSchema, Result as DataFusionResult};
 use datafusion::config::ConfigOptions;
@@ -9,11 +9,11 @@ use datafusion::physical_plan::filter_pushdown::{
     ChildPushdownResult, FilterDescription, FilterPushdownPhase, FilterPushdownPropagation,
 };
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
     metrics::{ExecutionPlanMetricsSet, MetricsSet},
+    DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
 };
 use datafusion_physical_expr::expressions::DynamicFilterPhysicalExpr;
-use datafusion_physical_expr::{PhysicalExpr, create_physical_expr};
+use datafusion_physical_expr::{create_physical_expr, PhysicalExpr};
 use std::fmt;
 use std::sync::Arc;
 

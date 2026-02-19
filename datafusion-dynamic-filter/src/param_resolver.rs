@@ -103,7 +103,7 @@ pub fn replace_placeholders(
 mod tests {
     use super::*;
     use datafusion::logical_expr::expr::Placeholder;
-    use datafusion::logical_expr::{Expr, col, lit};
+    use datafusion::logical_expr::{col, lit, Expr};
 
     #[test]
     fn param_resolver_udf_name_is_correct() {
@@ -161,12 +161,10 @@ mod tests {
         let result = replace_placeholders(&expr, &params);
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Placeholder '$1' was not provided a value")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Placeholder '$1' was not provided a value"));
     }
 
     #[test]

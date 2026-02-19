@@ -1,6 +1,6 @@
 use super::DynamicFilterNode;
-use datafusion::common::Result as DataFusionResult;
 use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
+use datafusion::common::Result as DataFusionResult;
 use datafusion::logical_expr::{Expr, LogicalPlan};
 use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use std::sync::Arc;
@@ -79,7 +79,7 @@ impl OptimizerRule for DynamicFilterRule {
 mod tests {
     use super::*;
     use datafusion::logical_expr::expr::Placeholder;
-    use datafusion::logical_expr::{LogicalPlanBuilder, col, lit};
+    use datafusion::logical_expr::{col, lit, LogicalPlanBuilder};
 
     #[test]
     fn rule_name_is_dynamic_filter_rule() {

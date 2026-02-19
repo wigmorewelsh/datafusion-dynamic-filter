@@ -1,13 +1,13 @@
 use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::common::{Result as DataFusionResult, ScalarValue};
-use datafusion::execution::TaskContext;
 use datafusion::execution::context::SessionState;
+use datafusion::execution::TaskContext;
 use datafusion::logical_expr::{Expr, LogicalPlan, ScalarUDF};
 use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use super::{PARAM_RESOLVER_UDF_NAME, ParamResolverUDF};
+use super::{ParamResolverUDF, PARAM_RESOLVER_UDF_NAME};
 
 #[derive(Debug)]
 pub struct ParameterizedStatement {
