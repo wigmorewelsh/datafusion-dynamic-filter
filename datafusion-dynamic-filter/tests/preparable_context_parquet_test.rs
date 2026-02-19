@@ -23,7 +23,8 @@ fn create_session_context() -> SessionContext {
         Arc<dyn datafusion::physical_planner::ExtensionPlanner + Send + Sync>,
     > = vec![Arc::new(DynamicFilterExtensionPlanner::new())];
 
-    let config = SessionConfig::new().with_target_partitions(1);
+    let mut config = SessionConfig::new().with_target_partitions(1);
+    config.options_mut().execution.parquet.pushdown_filters = true;
 
     let state = SessionStateBuilder::new()
         .with_config(config)

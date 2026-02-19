@@ -179,10 +179,51 @@ impl ExecutionPlan for DynamicFilterExec {
         let dynamic_filter = if let Some(dynamic_filter) = &self.dynamic_filter {
             dynamic_filter.clone()
         } else {
-            let placeholder = Arc::new(datafusion_physical_expr::expressions::Literal::new(
-                datafusion::common::ScalarValue::Boolean(Some(true)),
-            )) as Arc<dyn PhysicalExpr>;
-            Arc::new(DynamicFilterPhysicalExpr::new(vec![], placeholder)) as Arc<dyn PhysicalExpr>
+            use datafusion::common::tree_node::{Transformed, TreeNode};
+            use datafusion::logical_expr::Expr;
+
+            let predicate_with_nulls = self
+                .predicate
+                .clone()
+                .transform(|e| {
+                    if let Expr::Placeholder(placeholder) = &e {
+                        let null_value = if let Some(data_type) = &placeholder.data_type {
+                            datafusion::common::ScalarValue::try_from(data_type).ok()
+                        } else {
+                            None
+                        };
+                        if let Some(null) = null_value {
+                            Ok(Transformed::yes(Expr::Literal(null, None)))
+                        } else {
+                            Ok(Transformed::no(e))
+                        }
+                    } else {
+                        Ok(Transformed::no(e))
+                    }
+                })
+                .unwrap_or_else(|_| {
+                    Transformed::no(datafusion::logical_expr::Expr::Literal(
+                        datafusion::common::ScalarValue::Boolean(Some(true)),
+                        None,
+                    ))
+                })
+                .data;
+
+            let physical_placeholder = create_physical_expr(
+                &predicate_with_nulls,
+                &self.input_dfschema,
+                &Default::default(),
+            )
+            .unwrap_or_else(|_| {
+                Arc::new(datafusion_physical_expr::expressions::Literal::new(
+                    datafusion::common::ScalarValue::Boolean(Some(true)),
+                ))
+            });
+            let children = physical_placeholder.children();
+            Arc::new(DynamicFilterPhysicalExpr::new(
+                children.into_iter().map(Arc::clone).collect(),
+                physical_placeholder,
+            )) as Arc<dyn PhysicalExpr>
         };
 
         let child_desc =
