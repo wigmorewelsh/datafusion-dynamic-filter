@@ -59,6 +59,115 @@ impl DynamicFilterExec {
     pub fn predicate(&self) -> &Expr {
         &self.predicate
     }
+
+    fn resolve_params(&self, context: &Arc<datafusion::execution::TaskContext>) -> Expr {
+        let Some(udf) = context.scalar_functions().get(PARAM_RESOLVER_UDF_NAME) else {
+            return self.predicate.clone();
+        };
+
+        let Some(param_resolver) = udf.inner().as_any().downcast_ref::<ParamResolverUDF>() else {
+            return self.predicate.clone();
+        };
+
+        let params = param_resolver.get_params();
+        replace_placeholders(&self.predicate, params).unwrap_or_else(|_| self.predicate.clone())
+    }
+
+    fn update_dynamic_filter(
+        &self,
+        physical_predicate: Arc<dyn PhysicalExpr>,
+    ) -> DataFusionResult<()> {
+        let Some(dynamic_filter) = &self.dynamic_filter else {
+            return Ok(());
+        };
+
+        let Some(df) = dynamic_filter
+            .as_any()
+            .downcast_ref::<DynamicFilterPhysicalExpr>()
+        else {
+            return Ok(());
+        };
+
+        df.update(physical_predicate)
+    }
+
+    fn create_placeholder_physical_expr(&self) -> Arc<dyn PhysicalExpr> {
+        use datafusion::common::tree_node::{Transformed, TreeNode};
+
+        let predicate_with_nulls = self
+            .predicate
+            .clone()
+            .transform(|e| {
+                if let Expr::Placeholder(placeholder) = &e {
+                    let null_value = placeholder
+                        .data_type
+                        .as_ref()
+                        .and_then(|dt| datafusion::common::ScalarValue::try_from(dt).ok());
+
+                    if let Some(null) = null_value {
+                        return Ok(Transformed::yes(Expr::Literal(null, None)));
+                    }
+                }
+                Ok(Transformed::no(e))
+            })
+            .unwrap_or_else(|_| {
+                Transformed::no(datafusion::logical_expr::Expr::Literal(
+                    datafusion::common::ScalarValue::Boolean(Some(true)),
+                    None,
+                ))
+            })
+            .data;
+
+        create_physical_expr(
+            &predicate_with_nulls,
+            &self.input_dfschema,
+            &Default::default(),
+        )
+        .unwrap_or_else(|_| {
+            Arc::new(datafusion_physical_expr::expressions::Literal::new(
+                datafusion::common::ScalarValue::Boolean(Some(true)),
+            ))
+        })
+    }
+
+    fn extract_dynamic_filter_from_pushdown(
+        child_pushdown_result: &ChildPushdownResult,
+    ) -> Option<Arc<dyn PhysicalExpr>> {
+        let filters = child_pushdown_result.self_filters.first()?;
+
+        let filter = filters.iter().find(|f| {
+            matches!(
+                f.discriminant,
+                datafusion::physical_plan::filter_pushdown::PushedDown::Yes
+            )
+        })?;
+
+        filter
+            .predicate
+            .as_any()
+            .downcast_ref::<DynamicFilterPhysicalExpr>()?;
+
+        Some(filter.predicate.clone())
+    }
+
+    fn reset_dynamic_filter(&self) -> DataFusionResult<()> {
+        let Some(dynamic_filter) = &self.dynamic_filter else {
+            return Ok(());
+        };
+
+        let Some(df) = dynamic_filter
+            .as_any()
+            .downcast_ref::<DynamicFilterPhysicalExpr>()
+        else {
+            return Ok(());
+        };
+
+        let placeholder = Arc::new(datafusion_physical_expr::expressions::Literal::new(
+            datafusion::common::ScalarValue::Boolean(Some(true)),
+        )) as Arc<dyn PhysicalExpr>;
+
+        df.update(placeholder)
+    }
 }
 
 impl fmt::Debug for DynamicFilterExec {
@@ -124,32 +233,15 @@ impl ExecutionPlan for DynamicFilterExec {
         partition: usize,
         context: Arc<datafusion::execution::TaskContext>,
     ) -> DataFusionResult<SendableRecordBatchStream> {
-        let predicate_with_params = if let Some(udf) =
-            context.scalar_functions().get(PARAM_RESOLVER_UDF_NAME)
-        {
-            if let Some(param_resolver) = udf.inner().as_any().downcast_ref::<ParamResolverUDF>() {
-                let params = param_resolver.get_params();
-                replace_placeholders(&self.predicate, params)?
-            } else {
-                self.predicate.clone()
-            }
-        } else {
-            self.predicate.clone()
-        };
-
+        let predicate_with_params = self.resolve_params(&context);
         let physical_predicate = create_physical_expr(
             &predicate_with_params,
             &self.input_dfschema,
             &Default::default(),
         )?;
 
-        if let Some(dynamic_filter) = &self.dynamic_filter {
-            if let Some(df) = dynamic_filter
-                .as_any()
-                .downcast_ref::<DynamicFilterPhysicalExpr>()
-            {
-                df.update(physical_predicate.clone())?;
-            }
+        if self.dynamic_filter.is_some() {
+            self.update_dynamic_filter(physical_predicate)?;
             return self.input.execute(partition, context);
         }
 
@@ -176,55 +268,14 @@ impl ExecutionPlan for DynamicFilterExec {
             return Ok(FilterDescription::new().with_child(child_desc));
         }
 
-        let dynamic_filter = if let Some(dynamic_filter) = &self.dynamic_filter {
-            dynamic_filter.clone()
-        } else {
-            use datafusion::common::tree_node::{Transformed, TreeNode};
-            use datafusion::logical_expr::Expr;
-
-            let predicate_with_nulls = self
-                .predicate
-                .clone()
-                .transform(|e| {
-                    if let Expr::Placeholder(placeholder) = &e {
-                        let null_value = if let Some(data_type) = &placeholder.data_type {
-                            datafusion::common::ScalarValue::try_from(data_type).ok()
-                        } else {
-                            None
-                        };
-                        if let Some(null) = null_value {
-                            Ok(Transformed::yes(Expr::Literal(null, None)))
-                        } else {
-                            Ok(Transformed::no(e))
-                        }
-                    } else {
-                        Ok(Transformed::no(e))
-                    }
-                })
-                .unwrap_or_else(|_| {
-                    Transformed::no(datafusion::logical_expr::Expr::Literal(
-                        datafusion::common::ScalarValue::Boolean(Some(true)),
-                        None,
-                    ))
-                })
-                .data;
-
-            let physical_placeholder = create_physical_expr(
-                &predicate_with_nulls,
-                &self.input_dfschema,
-                &Default::default(),
-            )
-            .unwrap_or_else(|_| {
-                Arc::new(datafusion_physical_expr::expressions::Literal::new(
-                    datafusion::common::ScalarValue::Boolean(Some(true)),
-                ))
-            });
+        let dynamic_filter = self.dynamic_filter.clone().unwrap_or_else(|| {
+            let physical_placeholder = self.create_placeholder_physical_expr();
             let children = physical_placeholder.children();
             Arc::new(DynamicFilterPhysicalExpr::new(
                 children.into_iter().map(Arc::clone).collect(),
                 physical_placeholder,
             )) as Arc<dyn PhysicalExpr>
-        };
+        });
 
         let child_desc =
             datafusion::physical_plan::filter_pushdown::ChildFilterDescription::from_child(
@@ -255,24 +306,7 @@ impl ExecutionPlan for DynamicFilterExec {
             })));
         }
 
-        let dynamic_filter = child_pushdown_result
-            .self_filters
-            .first()
-            .and_then(|filters| {
-                filters.iter().find_map(|f| {
-                    if matches!(
-                        f.discriminant,
-                        datafusion::physical_plan::filter_pushdown::PushedDown::Yes
-                    ) {
-                        f.predicate
-                            .as_any()
-                            .downcast_ref::<DynamicFilterPhysicalExpr>()
-                            .map(|_| f.predicate.clone())
-                    } else {
-                        None
-                    }
-                })
-            });
+        let dynamic_filter = Self::extract_dynamic_filter_from_pushdown(&child_pushdown_result);
 
         let new_exec = Self {
             predicate: self.predicate.clone(),
@@ -289,17 +323,7 @@ impl ExecutionPlan for DynamicFilterExec {
     }
 
     fn reset_state(self: Arc<Self>) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
-        if let Some(dynamic_filter) = &self.dynamic_filter {
-            if let Some(df) = dynamic_filter
-                .as_any()
-                .downcast_ref::<DynamicFilterPhysicalExpr>()
-            {
-                let placeholder = Arc::new(datafusion_physical_expr::expressions::Literal::new(
-                    datafusion::common::ScalarValue::Boolean(Some(true)),
-                )) as Arc<dyn PhysicalExpr>;
-                df.update(placeholder)?;
-            }
-        }
+        self.reset_dynamic_filter()?;
         let children = self.children().into_iter().cloned().collect();
         self.with_new_children(children)
     }
