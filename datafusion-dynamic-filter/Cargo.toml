@@ -1,8 +1,12 @@
 [package]
 name = "datafusion-dynamic-filter"
 version = "0.1.0"
-edition = "2021"
-license = "MIT"
+edition.workspace = true
+license.workspace = true
+description = "Dynamic filter optimization for Apache DataFusion query engine"
+repository = "https://github.com/wigmorewelsh/datafusion-dynamic-filter"
+keywords = ["datafusion", "query", "sql", "arrow", "optimization"]
+categories = ["database"]
 
 [dependencies]
 datafusion = { version = "50.2.0", features = ["serde"] }

@@ -1,3 +1,21 @@
 [workspace]
-members = ["datafusion-dynamic-filter"]
 resolver = "2"
+
+members = [
+    "datafusion-dynamic-filter",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[workspace.metadata.release]
+allow-branch = ["main", "master"]
+push = true
+tag = true
+tag-name = "{{version}}"
+publish = false
