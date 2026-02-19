@@ -1,0 +1,11 @@
+target/
+.cargo
+.idea
+.zed
+ProfileApp.trace
+flamegraph.svg
+mutants.out*
+.DS_Store
+.sccache/
+benches-comparison/target/debug/build/ahash-3813e0326e8662df/build-script-build
+__pycache__
