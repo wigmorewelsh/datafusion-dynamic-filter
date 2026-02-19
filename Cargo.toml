@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "datafusion-dynamic-filter"]
+resolver = "2"
+
 [package]
 name = "aimsir"
 version = "0.1.0"
@@ -28,6 +32,7 @@ pyo3 = { version = "0.25", features = ["extension-module", "abi3", "abi3-py311"]
 pyo3-async-runtimes = { version = "0.25", features = ["tokio-runtime"], optional = true }
 arrow = { version = "56.2", features = ["ffi"], optional = true }
 pyo3-arrow = { version = "0.11", optional = true }
+datafusion-dynamic-filter = { path = "datafusion-dynamic-filter" }
 
 [dev-dependencies]
 tempfile = "3.8"

@@ -1,0 +1,20 @@
+[package]
+name = "datafusion-dynamic-filter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+datafusion = { version = "50.2.0", features = ["serde"] }
+datafusion-physical-expr = "50.2.0"
+async-trait = "0.1"
+tokio = { version = "1.0", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full", "test-util"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+rusqlite = "0.32"
+rand = "0.8"
+
+[[bench]]
+name = "prepared_statement_benchmark"
+harness = false
