@@ -219,10 +219,17 @@ impl ExecutionPlan for DynamicFilterExec {
             .first()
             .and_then(|filters| {
                 filters.iter().find_map(|f| {
-                    f.predicate
-                        .as_any()
-                        .downcast_ref::<DynamicFilterPhysicalExpr>()
-                        .map(|_| f.predicate.clone())
+                    if matches!(
+                        f.discriminant,
+                        datafusion::physical_plan::filter_pushdown::PushedDown::Yes
+                    ) {
+                        f.predicate
+                            .as_any()
+                            .downcast_ref::<DynamicFilterPhysicalExpr>()
+                            .map(|_| f.predicate.clone())
+                    } else {
+                        None
+                    }
                 })
             });
 
