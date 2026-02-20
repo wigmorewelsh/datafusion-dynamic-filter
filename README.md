@@ -24,12 +24,15 @@ This library works over re-using the dynamic filter, added to datafusion last ye
 
 ## Benchmark
 
-The benchmarks measure the performance difference between prepared and unprepared statements when executing 50 queries against a table with 1,000 records.
+The benchmarks measure the performance difference between prepared statements, precomputed logical plans, and unprepared statements when executing 50 queries against a table with 1,000 records.
 
 | Query Type | Time | Speedup |
 |-----------|------|---------|
-| Prepared Statement | 2.94 ms | 13.7x faster |
-| Unprepared Statement | 40.24 ms | baseline |
+| Prepared Statement | 2.93 ms | 13.3x faster |
+| Precomputed Logical Plan | 40.53 ms | 1.0x (similar) |
+| Unprepared Statement | 39.07 ms | baseline |
+
+The prepared statement approach pre-computes the physical plan, avoiding both parsing and logical optimization on each execution. The precomputed logical plan approach (using `with_param_values`) skips parsing but still performs logical optimization and physical planning for each query, offering minimal performance improvement over unprepared queries.
 
 The difference improves further for data providers that can optimize DynamicFilters:
 

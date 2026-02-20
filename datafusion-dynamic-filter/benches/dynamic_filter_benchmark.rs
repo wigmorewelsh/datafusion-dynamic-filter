@@ -38,6 +38,7 @@ trait PreparedStatementBench {
     fn populate(&mut self);
     fn query_random_keys_prepared(&self, keys: &[u32]) -> usize;
     fn query_random_keys_unprepared(&self, keys: &[u32]) -> usize;
+    fn query_random_keys_logical_plan(&self, keys: &[u32]) -> usize;
 }
 
 struct DataFusionAdapter {
@@ -141,6 +142,45 @@ impl PreparedStatementBench for DataFusionAdapter {
             total_rows
         })
     }
+
+    fn query_random_keys_logical_plan(&self, keys: &[u32]) -> usize {
+        let runtime = get_runtime();
+
+        runtime.block_on(async {
+            let logical_plan = self
+                .ctx
+                .state()
+                .create_logical_plan("SELECT id, name, amount FROM users WHERE id = $1")
+                .await
+                .unwrap();
+
+            let mut total_rows = 0;
+
+            for key in keys {
+                let plan_with_params = logical_plan
+                    .clone()
+                    .with_param_values(vec![ScalarValue::Int32(Some(*key as i32))])
+                    .unwrap();
+
+                let optimized_plan = self.ctx.state().optimize(&plan_with_params).unwrap();
+                let physical_plan = self
+                    .ctx
+                    .state()
+                    .create_physical_plan(&optimized_plan)
+                    .await
+                    .unwrap();
+                let task_ctx = self.ctx.task_ctx();
+                let stream =
+                    datafusion::physical_plan::execute_stream(physical_plan, task_ctx).unwrap();
+                let batches = datafusion::physical_plan::common::collect(stream)
+                    .await
+                    .unwrap();
+                total_rows += batches.iter().map(|b| b.num_rows()).sum::<usize>();
+            }
+
+            total_rows
+        })
+    }
 }
 
 fn benchmark_prepared_statement_lookup(c: &mut Criterion) {
@@ -154,6 +194,11 @@ fn benchmark_prepared_statement_lookup(c: &mut Criterion) {
         black_box(count);
     }
 
+    fn scenario_logical_plan(db: &impl PreparedStatementBench, keys: &[u32]) {
+        let count = db.query_random_keys_logical_plan(keys);
+        black_box(count);
+    }
+
     let random_keys = generate_random_keys();
 
     let mut group = c.benchmark_group("prepared_statement_lookup");
@@ -163,6 +208,12 @@ fn benchmark_prepared_statement_lookup(c: &mut Criterion) {
         let mut datafusion_db = DataFusionAdapter::setup();
         datafusion_db.populate();
         b.iter(|| scenario_prepared(&datafusion_db, &random_keys))
+    });
+
+    group.bench_function("datafusion_logical_plan", |b| {
+        let mut datafusion_db = DataFusionAdapter::setup();
+        datafusion_db.populate();
+        b.iter(|| scenario_logical_plan(&datafusion_db, &random_keys))
     });
 
     group.bench_function("datafusion_unprepared", |b| {
