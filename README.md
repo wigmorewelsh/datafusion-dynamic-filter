@@ -36,14 +36,14 @@ The prepared statement approach pre-computes the physical plan, avoiding both pa
 
 The difference improves further for data providers that can optimize DynamicFilters:
 
-Querying for 50 random keys with temporal database:
+Querying for 100 random keys individually with temporal database:
 
 | Query Type | Time | Speedup |
 |-----------|------|---------|
 | Prepared Statement | 591.80 µs | 55.2x faster |
 | Unprepared Statement | 32.68 ms | baseline |
 
-Querying using IN clause with temporal database:
+Querying for 1000 using IN clause with temporal database:
 
 | Query Type | Time | Speedup |
 |-----------|------|---------|
